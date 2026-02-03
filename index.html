@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Hello web audio</title>
+</head>
+<body>
+    <label for="waveform">Waveform:</label>
+    <select id="waveform">
+        <option value="sine">Sine</option>
+        <option value="sawtooth">Sawtooth</option>
+        <option value="square">Square</option>
+        <option value="triangle">Triangle</option>
+    </select>
+
+    <div style="margin-top:12px; display:flex; flex-direction:column; gap:8px;">
+        <div style="display:flex; align-items:center; gap:8px;">
+            <label for="meter" style="min-width:100px;">Output Level:</label>
+            <canvas id="meter" width="300" height="20" style="border:1px solid #ccc; background:#222; flex:1;"></canvas>
+            <span id="meterValue" style="min-width:90px; text-align:right; color:#ddd; font-family:monospace;">0.000 ( -∞ dB)</span>
+        </div>
+        <div style="display:flex; align-items:center; gap:8px;">
+            <label for="threshold" style="min-width:100px;">Limiter Threshold:</label>
+            <input type="range" id="threshold" min="0.1" max="0.9" step="0.05" value="0.5" style="flex:1;">
+            <span id="thresholdValue">0.50</span>
+        </div>
+        <div style="display:flex; align-items:center; gap:8px;">
+            <label for="ceiling" style="min-width:100px;">Limiter Ceiling:</label>
+            <input type="range" id="ceiling" min="0.2" max="1.0" step="0.05" value="0.6" style="flex:1;">
+            <span id="ceilingValue">0.60</span>
+        </div>
+    </div>
+</body>
+
+<script src="main.js"></script>
+
+</html>
