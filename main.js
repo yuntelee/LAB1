@@ -48,8 +48,8 @@ document.addEventListener("DOMContentLoaded", function(event) {
     masterGain.gain.setValueAtTime(1.0, audioCtx.currentTime);
 
     // simple peak limiter settings (now controlled by sliders)
-    let limiterThreshold = 0.5; // when to start reducing
-    let limiterCeiling = 0.6;   // never allow measured level to exceed this
+    let limiterThreshold = 0.2; // when to start reducing
+    let limiterCeiling = 0.4;   // never allow measured level to exceed this
     let limiterEngaged = false;
 
     // set up limiter sliders
@@ -95,58 +95,78 @@ document.addEventListener("DOMContentLoaded", function(event) {
         if (!meterCtx) return;
 
         analyser.getByteTimeDomainData(meterData);
-        // compute RMS (root mean square) of waveform
+
         let sum = 0;
+        let peak = 0;
+
         for (let i = 0; i < meterData.length; i++) {
-            const v = (meterData[i] - 128) / 128.0; // -1..1
+            const v = (meterData[i] - 128) / 128.0; // Normalize -1..1
+            const absV = Math.abs(v);
+            
+            if (absV > peak) peak = absV; // Track absolute peak
             sum += v * v;
         }
+        
         const rms = Math.sqrt(sum / meterData.length);
-        // scale RMS to 0..1 for display, add small boost
-        const level = Math.min(1, rms * 1.6);
+        const visualLevel = Math.min(1, rms * 1.6); // Boosted RMS for display
 
-        // update numeric readout (RMS and dB)
-        if (meterValueEl) {
-            const amp = rms; // 0..1
-            let db;
-            if (amp <= 1e-6) {
-                db = '-∞';
-            } else {
-                db = (20 * Math.log10(amp)).toFixed(1);
-            }
-            meterValueEl.textContent = amp.toFixed(3) + ' (' + db + ' dB)';
-        }
-
-        // draw background
-        meterCtx.fillStyle = '#222';
-        meterCtx.fillRect(0, 0, meterWidth, meterHeight);
-
-        // limiter: if level exceeds threshold, reduce masterGain smoothly so level stays under ceiling
-        const currentGain = masterGain.gain.value || 1.0;
-        if (level > limiterThreshold) {
-            const requiredFactor = limiterCeiling / level;
+        // LIMITER LOGIC: Use PEAK to prevent clipping
+        const currentGain = masterGain.gain.value;
+        
+        if (peak > limiterThreshold) {
+            // Reduction based on peak
+            const requiredFactor = limiterCeiling / peak;
             const newTarget = Math.min(currentGain, currentGain * requiredFactor);
+            
             masterGain.gain.cancelScheduledValues(audioCtx.currentTime);
-            masterGain.gain.setTargetAtTime(newTarget, audioCtx.currentTime, 0.02);
+            masterGain.gain.setTargetAtTime(newTarget, audioCtx.currentTime, 0.005); // Fast attack
             limiterEngaged = true;
-        } else if (limiterEngaged && level < (limiterThreshold - 0.05)) {
-            // restore gain slowly when safe
+
+        } else if (limiterEngaged && peak < (limiterThreshold - 0.05)) {
+            // Release only when peak is safe
             masterGain.gain.cancelScheduledValues(audioCtx.currentTime);
-            masterGain.gain.setTargetAtTime(1.0, audioCtx.currentTime, 0.5);
+            masterGain.gain.setTargetAtTime(1.0, audioCtx.currentTime, 0.5); // Slow release
             limiterEngaged = false;
         }
 
-        // draw level bar
+        // Draw Logic (using visualLevel)
+        if (meterValueEl) {
+            const db = rms <= 1e-6 ? '-∞' : (20 * Math.log10(rms)).toFixed(1);
+            meterValueEl.textContent = rms.toFixed(3) + ' (' + db + ' dB)';
+        }
+
+        meterCtx.fillStyle = '#222';
+        meterCtx.fillRect(0, 0, meterWidth, meterHeight);
+
         const grad = meterCtx.createLinearGradient(0, 0, meterWidth, 0);
         grad.addColorStop(0, '#0f0');
         grad.addColorStop(0.6, '#ff0');
         grad.addColorStop(1, '#f00');
         meterCtx.fillStyle = grad;
-        meterCtx.fillRect(0, 0, meterWidth * level, meterHeight);
+        meterCtx.fillRect(0, 0, meterWidth * visualLevel, meterHeight);
     }
 
     // start the meter loop
     drawMeter();
+
+    // adjust master gain based on number of active notes to avoid clipping
+    function updateHeadroom() {
+        const activeCount = Object.keys(activeOscillators).length;
+
+        // Calculate theoretical max volume based on your note gain (0.3)
+        // We add a tiny buffer (0.1) for safety
+        const potentialAmplitude = (activeCount * 0.3) + 0.1;
+
+        // If potential volume > 1.0, lower the master gain to fit it
+        let safeGain = 1.0;
+        if (potentialAmplitude > 1.0) {
+            safeGain = 1.0 / potentialAmplitude;
+        }
+
+        // Smoothly transition to the safe gain
+        masterGain.gain.cancelScheduledValues(audioCtx.currentTime);
+        masterGain.gain.setTargetAtTime(safeGain, audioCtx.currentTime, 0.05);
+    }
 
     function keyDown(event) {
         const key = (event.detail || event.which).toString();
@@ -162,6 +182,9 @@ document.addEventListener("DOMContentLoaded", function(event) {
             gain.gain.setTargetAtTime(0.001, audioCtx.currentTime, 0.1);
             osc.stop(audioCtx.currentTime + 0.3);
             delete activeOscillators[key];
+
+            // update headroom after a note is released
+            updateHeadroom();
         }
     }
 
@@ -179,6 +202,8 @@ document.addEventListener("DOMContentLoaded", function(event) {
 
         osc.start();
         activeOscillators[key] = { osc, gain };
+        // update headroom immediately when a note starts
+        updateHeadroom();
     }
 
 });
